@@ -1,0 +1,9 @@
+# Dipendenze principali per la dashboard
+numpy==1.26.4      # Versione compatibile con Python 3.12
+pandas==2.2.3      # Versione compatibile con Python 3.12
+streamlit==1.32.0  # Framework per la dashboard
+plotly==5.18.0     # Grafici interattivi
+deep-translator==1.11.4  # Traduzione automatica
+requests==2.31.0   # Per le chiamate API a Ollama
+fastapi==0.110.0   # Per il server API
+uvicorn==0.27.1    # Server ASGI per FastAPI 

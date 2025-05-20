@@ -335,14 +335,14 @@ def translate_text(text, progress_bar, status_text, current_item, total_items, c
 
 ### Dipendenze Python
 ```bash
-pip install streamlit pandas plotly deep-translator fastapi uvicorn nest-asyncio pydantic requests
+pip install -r requirements.txt
 ```
 
 ### Configurazione di Ollama
 1. Installare Ollama seguendo le istruzioni sul sito ufficiale
 2. Scaricare il modello Mistral:
 ```bash
-ollama pull mistral
+ollama run mistral
 ```
 
 ### Preparazione dei Dati

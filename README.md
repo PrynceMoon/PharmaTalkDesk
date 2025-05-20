@@ -440,5 +440,3 @@ Implementazione delle diverse sezioni dell'interfaccia Streamlit.
 Implementazione del meccanismo di cache per ottimizzare le prestazioni del chatbot.
 
 ---
-
-*Questa documentazione è stata creata per un progetto universitario e rappresenta una panoramica completa del sistema di Dashboard di Consultazione Medicinali con Assistente Virtuale basato su LLM. Per ulteriori informazioni o supporto, contattare il team di sviluppo.*

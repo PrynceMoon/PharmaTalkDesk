@@ -1,40 +1,44 @@
-# Importazioni di base
-import streamlit as st
-import sys
-import pandas as pd
-import plotly.express as px
-from deep_translator import GoogleTranslator
-import time
-import os
-import json
-import requests
-from fastapi import FastAPI, BackgroundTasks
-import uvicorn
-import threading
-import asyncio
-import nest_asyncio
-from pydantic import BaseModel
-import gc
-import socket
+# ============= IMPORTAZIONI =============
+# Librerie di base per l'interfaccia web e la manipolazione dei dati
+import streamlit as st  # Framework per creare app web
+import sys  # Funzionalità di sistema
+import pandas as pd  # Manipolazione e analisi dei dati
+import plotly.express as px  # Creazione di grafici interattivi
+from deep_translator import GoogleTranslator  # Traduzione automatica del testo
+import time  # Gestione del tempo e dei ritardi
+import os  # Operazioni sul sistema operativo
+import json  # Gestione di dati JSON
+import requests  # Richieste HTTP
+from fastapi import FastAPI, BackgroundTasks  # Framework per API
+import uvicorn  # Server ASGI per FastAPI
+import threading  # Gestione dei thread
+import asyncio  # Programmazione asincrona
+import nest_asyncio  # Gestione di loop asincroni annidati
+from pydantic import BaseModel  # Validazione dei dati
+import gc  # Garbage collector
+import socket  # Operazioni di rete
 
-# Configurazione della pagina Streamlit (DEVE essere il primo comando Streamlit)
+# ============= CONFIGURAZIONE STREAMLIT =============
+# Impostazione della configurazione della pagina web
 st.set_page_config(
-    page_title="Dashboard Medicinali",
-    page_icon="💊",
-    layout="wide"
+    page_title="Dashboard Medicinali",  # Titolo della pagina
+    page_icon="💊",  # Icona della pagina
+    layout="wide"  # Layout a schermo intero
 )
 
-# Configurazione dell'event loop per FastAPI e Streamlit
+# ============= CONFIGURAZIONE ASINCRONA =============
+# Funzione per configurare l'event loop asincrono
 async def setup_async():
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()  # Prova a ottenere l'event loop esistente
     except RuntimeError:
-        loop = asyncio.new_event_loop()
+        loop = asyncio.new_event_loop()  # Crea un nuovo event loop se non esiste
         asyncio.set_event_loop(loop)
-    nest_asyncio.apply()
+    nest_asyncio.apply()  # Applica il supporto per loop annidati
 
+# Funzione per trovare una porta libera per il server
 def find_free_port(start_port=8000, max_port=8100):
-    """Trova una porta libera partendo da start_port"""
+    """Cerca una porta disponibile nell'intervallo specificato"""
     for port in range(start_port, max_port):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -44,36 +48,51 @@ def find_free_port(start_port=8000, max_port=8100):
             continue
     return None
 
-# Inizializzazione FastAPI
+# ============= CONFIGURAZIONE FASTAPI =============
+# Inizializzazione dell'app FastAPI
 app = FastAPI()
 
+# Variabile globale per la porta del server
+fastapi_port = None
+
+# Funzione per avviare il server FastAPI
 def run_fastapi():
+    global fastapi_port
     try:
+        # Trova una porta libera per il server
         free_port = find_free_port()
         if not free_port:
             st.warning("Non è stato possibile trovare una porta libera per il server FastAPI. L'applicazione continuerà a funzionare ma alcune funzionalità potrebbero essere limitate.")
             return
-
-        config = uvicorn.Config(app, host="127.0.0.1", port=free_port, log_level="info")
+        
+        fastapi_port = free_port
+        
+        # Configura e avvia il server
+        config = uvicorn.Config(app, host="127.0.0.1", port=fastapi_port, log_level="info")
         server = uvicorn.Server(config)
-        asyncio.run(setup_async())
+        
         try:
-            asyncio.run(server.serve())
+            asyncio.run(setup_async())  # Configura l'ambiente asincrono
+            asyncio.run(server.serve())  # Avvia il server
         except SystemExit:
-            pass  # Ignora l'uscita del sistema quando il server viene fermato
+            pass  # Gestisce l'uscita normale del server
         except Exception as e:
-            st.error(f"Errore durante l'avvio del server FastAPI: {str(e)}")
+            st.error(f"Errore durante l'esecuzione del server FastAPI: {str(e)}")
     except Exception as e:
         st.error(f"Errore nella configurazione del server: {str(e)}")
 
 # Avvio del server FastAPI in un thread separato
 if 'fastapi_thread' not in st.session_state:
-    fastapi_thread = threading.Thread(target=run_fastapi, daemon=True)
-    fastapi_thread.start()
-    st.session_state.fastapi_thread = fastapi_thread
-    time.sleep(1)  # Breve pausa per permettere l'avvio del server
+    if 'fastapi_thread' in st.session_state and st.session_state.fastapi_thread.is_alive():
+        pass  # Non crea un nuovo thread se ne esiste già uno attivo
+    else:
+        fastapi_thread = threading.Thread(target=run_fastapi, daemon=True)
+        fastapi_thread.start()
+        st.session_state.fastapi_thread = fastapi_thread
+        time.sleep(1)  # Pausa per permettere l'avvio del server
 
-# Stile CSS per il toggle della lingua
+# ============= STILE CSS =============
+# Definizione dello stile per il pulsante di cambio lingua
 st.markdown("""
     <style>
     .stButton > button {
@@ -86,23 +105,181 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Titolo principale
-st.title("💊 Dashboard Consultazione Medicinali")
-st.markdown("---")
+# ============= GESTIONE DELLA LINGUA =============
+# Inizializzazione della lingua predefinita
+if 'language' not in st.session_state:
+    st.session_state.language = "Italiano"
 
-# Sidebar - Toggle della lingua in alto
+# Pulsante per il cambio della lingua nella sidebar
 is_italian = st.sidebar.toggle("🌍 EN / IT", value=True, key="language_toggle")
 st.session_state.language = "Italiano" if is_italian else "English"
 
-# Sidebar - Filtri
-st.sidebar.header("Filtri")
+# ============= GESTIONE DEL TESTO MULTILINGUA =============
+def get_text(key):
+    """Restituisce il testo nella lingua selezionata"""
+    # Dizionario delle traduzioni per tutte le stringhe dell'interfaccia
+    translations = {
+        "page_title": {
+            "it": "Dashboard Consultazione Medicinali",
+            "en": "Medicines Consultation Dashboard"
+        },
+        "filters": {
+            "it": "Filtri",
+            "en": "Filters"
+        },
+        "search_medicine": {
+            "it": "Cerca medicinale per nome:",
+            "en": "Search medicine by name:"
+        },
+        "medicine_list": {
+            "it": "Lista Medicinali",
+            "en": "Medicines List"
+        },
+        "medicine_name": {
+            "it": "Nome Medicinale",
+            "en": "Medicine Name"
+        },
+        "composition": {
+            "it": "Composizione",
+            "en": "Composition"
+        },
+        "uses": {
+            "it": "Utilizzi",
+            "en": "Uses"
+        },
+        "side_effects": {
+            "it": "Effetti Collaterali",
+            "en": "Side Effects"
+        },
+        "statistics": {
+            "it": "Statistiche",
+            "en": "Statistics"
+        },
+        "reviews_distribution": {
+            "it": "Distribuzione Media delle Recensioni",
+            "en": "Average Reviews Distribution"
+        },
+        "excellent": {
+            "it": "Eccellenti",
+            "en": "Excellent"
+        },
+        "average": {
+            "it": "Nella Media",
+            "en": "Average"
+        },
+        "poor": {
+            "it": "Scarse",
+            "en": "Poor"
+        },
+        "virtual_assistant": {
+            "it": "💬 Assistente Virtuale (Mistral)",
+            "en": "💬 Virtual Assistant (Mistral)"
+        },
+        "ask_question": {
+            "it": "Fai una domanda sui medicinali...",
+            "en": "Ask a question about medicines..."
+        },
+        "medicine_details": {
+            "it": "Dettagli Medicinale",
+            "en": "Medicine Details"
+        },
+        "select_medicine": {
+            "it": "Seleziona un medicinale per vedere i dettagli:",
+            "en": "Select a medicine to see details:"
+        },
+        "name": {
+            "it": "Nome",
+            "en": "Name"
+        },
+        "manufacturer": {
+            "it": "Produttore",
+            "en": "Manufacturer"
+        },
+        "excellent_reviews": {
+            "it": "Recensioni Eccellenti",
+            "en": "Excellent Reviews"
+        },
+        "average_reviews": {
+            "it": "Recensioni Nella Media",
+            "en": "Average Reviews"
+        },
+        "poor_reviews": {
+            "it": "Recensioni Scarse",
+            "en": "Poor Reviews"
+        },
+    }
+    
+    # Determina la lingua corrente e restituisce la traduzione appropriata
+    lang = "it" if st.session_state.language == "Italiano" else "en"
+    return translations.get(key, {}).get(lang, key)
 
-# Ricerca per nome
-search_term = st.sidebar.text_input("Cerca medicinale per nome:")
+# ============= TITOLO PRINCIPALE =============
+st.title("💊 " + get_text("page_title"))
+st.markdown("---")
 
-# Configurazione Ollama
+# ============= CONFIGURAZIONE SIDEBAR E FILTRI =============
+# Aggiunta dell'header dei filtri nella sidebar
+st.sidebar.header(get_text("filters"))
+
+# Campo di ricerca per nome del medicinale
+search_term = st.sidebar.text_input(get_text("search_medicine"))
+
+# ============= CONFIGURAZIONE OLLAMA =============
+# Impostazione dell'endpoint e del modello per il chatbot
 OLLAMA_ENDPOINT = "http://localhost:11434/api/generate"
 MODEL_NAME = "mistral"
+
+# ============= DEFINIZIONE MODELLO DATI =============
+# Classe per la struttura delle richieste API del chatbot
+class ChatRequest(BaseModel):
+    prompt: str
+    context: str
+
+# ============= CONFIGURAZIONE PROMPT DI SISTEMA =============
+# Prompt predefinito per il comportamento del chatbot
+DEFAULT_SYSTEM_PROMPT = """Sei un assistente medico esperto che risponde SEMPRE in italiano. 
+Il tuo compito è aiutare gli utenti fornendo informazioni accurate sui medicinali basandoti sui dati forniti. 
+Rispondi in modo chiaro e professionale, utilizzando ESCLUSIVAMENTE la lingua italiana."""
+
+# ============= ENDPOINT FASTAPI =============
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    """Gestisce le richieste di chat in arrivo"""
+    try:
+        # Genera la risposta utilizzando Ollama
+        response = generate_ollama_response(request.prompt, DEFAULT_SYSTEM_PROMPT)
+        return {"response": response}
+    except Exception as e:
+        return {"response": f"Errore nella generazione della risposta: {str(e)}"}
+
+# ============= FUNZIONI DI UTILITÀ =============
+def check_ollama_status():
+    """Verifica se il servizio Ollama è attivo e raggiungibile"""
+    try:
+        response = requests.get("http://localhost:11434/api/tags")
+        return response.status_code == 200
+    except:
+        return False
+
+# ============= GESTIONE CACHE CHATBOT =============
+# Inizializzazione della cache per le risposte del chatbot
+if 'response_cache' not in st.session_state:
+    st.session_state.response_cache = {}
+
+def calculate_similarity(query1, query2):
+    """Calcola la similarità tra due query basandosi sui termini comuni"""
+    query1_terms = set(query1.lower().split())
+    query2_terms = set(query2.lower().split())
+    intersection = query1_terms.intersection(query2_terms)
+    union = query1_terms.union(query2_terms)
+    return len(intersection) / len(union) if union else 0
+
+def get_cached_response(prompt, threshold=0.8):
+    """Cerca una risposta simile nella cache basandosi sulla similarità delle query"""
+    for cached_prompt, response in st.session_state.response_cache.items():
+        if calculate_similarity(prompt, cached_prompt) > threshold:
+            return response
+    return None
 
 # Funzione per tradurre il testo con gestione degli errori e rate limiting
 def translate_text(text, progress_bar, status_text, current_item, total_items, current_column):
@@ -228,202 +405,28 @@ filtered_df = load_data()
 if search_term:
     filtered_df = filtered_df[filtered_df['Medicine Name'].str.contains(search_term, case=False, na=False)]
 
-# Funzione per verificare lo stato dell'API
-def check_api_status():
-    try:
-        # Test semplice per verificare la connessione
-        client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[{"role": "user", "content": "Test connection"}],
-            temperature=0.7,
-            max_tokens=500,
-            stream=False
-        )
-        return True
-    except Exception as e:
-        st.error(f"Errore di connessione all'API: {str(e)}")
-        return False
-
-# Classe per la richiesta API
-class ChatRequest(BaseModel):
-    prompt: str
-    context: str
-
-# Configurazione del modello
-MODEL_NAME = "mistral"
-DEFAULT_SYSTEM_PROMPT = """Sei un assistente medico esperto che risponde SEMPRE in italiano. 
-Il tuo compito è aiutare gli utenti fornendo informazioni accurate sui medicinali basandoti sui dati forniti. 
-Rispondi in modo chiaro e professionale, utilizzando ESCLUSIVAMENTE la lingua italiana."""
-
-# Caricamento del modello (verrà fatto una sola volta)
-@st.cache_resource
-def load_llm():
-    try:
-        # Configurazione del tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(
-            MODEL_NAME,
-            trust_remote_code=True
-        )
-        
-        # Configurazione del modello ottimizzata per CPU
-        model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            trust_remote_code=True,
-            low_cpu_mem_usage=True,
-            torch_dtype=torch.float32
-        )
-        
-        # Forza il modello in modalità valutazione per risparmiare memoria
-        model.eval()
-        
-        # Creazione della pipeline ottimizzata
-        pipe = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tokenizer,
-            max_new_tokens=64,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.95,
-            return_full_text=False,
-            batch_size=1
-        )
-        
-        return pipe
-    except Exception as e:
-        st.error(f"Errore nel caricamento del modello: {str(e)}")
-        return None
-
-# Funzione per generare risposte
-def generate_response(pipe, prompt, context):
-    if pipe is None:
-        return "Errore: Modello non caricato correttamente. Verifica il login a Hugging Face."
-    
-    try:
-        # Crea il prompt completo
-        full_prompt = f"""<|system|>
-{DEFAULT_SYSTEM_PROMPT}
-
-Contesto sui medicinali:
-{context}</|system|>
-<|user|>
-{prompt}</|user|>
-<|assistant|>"""
-        
-        # Genera la risposta
-        response = pipe(
-            full_prompt,
-            max_new_tokens=512,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.95,
-            return_full_text=False
-        )[0]["generated_text"]
-        
-        # Pulisci la risposta
-        response = response.split("</|assistant|>")[0].strip()
-        return response
-    except Exception as e:
-        return f"Mi dispiace, si è verificato un errore nella generazione della risposta: {str(e)}"
-
-# Endpoint FastAPI
-@app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
-    model, tokenizer = load_llm()
-    if model is None or tokenizer is None:
-        return {"response": "Errore: Modello non caricato correttamente"}
-    
-    try:
-        # Formatta il prompt
-        full_prompt = f"""Sei un assistente medico esperto. Basandoti sui dati forniti, rispondi alla domanda dell'utente.
-
-### Contesto (informazioni sui medicinali):
-{request.context}
-
-### Domanda dell'utente:
-{request.prompt}
-
-### Risposta:"""
-        
-        # Genera la risposta
-        inputs = tokenizer(full_prompt, return_tensors="pt").to(model.device)
-        outputs = model.generate(
-            inputs["input_ids"],
-            max_length=512,
-            temperature=0.7,
-            num_return_sequences=1,
-            pad_token_id=tokenizer.eos_token_id
-        )
-        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        
-        # Estrai solo la parte della risposta dopo "### Risposta:"
-        if "### Risposta:" in response:
-            response = response.split("### Risposta:")[-1].strip()
-        
-        return {"response": response}
-    except Exception as e:
-        return {"response": f"Errore nella generazione della risposta: {str(e)}"}
-
-# Funzione per verificare se il server è in esecuzione
-def is_server_running():
-    try:
-        response = requests.get("http://127.0.0.1:8000/docs")
-        return response.status_code == 200
-    except:
-        return False
-
-# Funzione per avviare il server FastAPI in background
-def run_api_server():
-    try:
-        nest_asyncio.apply()
-        uvicorn.run(app, host="127.0.0.1", port=8000)
-    except Exception as e:
-        st.error(f"Errore nell'avvio del server: {str(e)}")
-
-# Avvia il server FastAPI in un thread separato se non è già in esecuzione
-if not is_server_running():
-    server_thread = threading.Thread(target=run_api_server, daemon=True)
-    server_thread.start()
-    time.sleep(2)  # Attendi che il server si avvii
-
-# Cache per le risposte del chatbot
-if 'response_cache' not in st.session_state:
-    st.session_state.response_cache = {}
-
-def calculate_similarity(query1, query2):
-    """Calcola la similarità tra due query"""
-    query1_terms = set(query1.lower().split())
-    query2_terms = set(query2.lower().split())
-    intersection = query1_terms.intersection(query2_terms)
-    union = query1_terms.union(query2_terms)
-    return len(intersection) / len(union) if union else 0
-
-def get_cached_response(prompt, threshold=0.8):
-    """Cerca una risposta simile nella cache"""
-    for cached_prompt, response in st.session_state.response_cache.items():
-        if calculate_similarity(prompt, cached_prompt) > threshold:
-            return response
-    return None
-
-# Funzione per generare risposte con Ollama
+# ============= GENERAZIONE RISPOSTE OLLAMA =============
 def generate_ollama_response(prompt, system_prompt, max_tokens=500):
+    """Genera una risposta utilizzando il modello Ollama"""
     try:
+        # Configurazione degli headers per la richiesta
         headers = {
             "Content-Type": "application/json"
         }
         
+        # Preparazione dei dati per la richiesta
         data = {
             "model": MODEL_NAME,
             "prompt": prompt,
             "system": system_prompt,
-            "stream": False,  # Disabilitiamo lo streaming per evitare la doppia stampa
+            "stream": False,  # Disattiva lo streaming per evitare output parziali
             "options": {
                 "num_predict": max_tokens,
-                "temperature": 0.7
+                "temperature": 0.7  # Controlla la creatività delle risposte
             }
         }
         
-        # Prova prima a ottenere una risposta dalla cache
+        # Verifica se esiste una risposta in cache
         cached_response = get_cached_response(prompt)
         if cached_response:
             return cached_response
@@ -440,20 +443,15 @@ def generate_ollama_response(prompt, system_prompt, max_tokens=500):
     except Exception as e:
         return f"Errore nella generazione della risposta: {str(e)}"
 
-# Funzione per verificare se Ollama è in esecuzione
-def check_ollama_status():
-    try:
-        response = requests.get("http://localhost:11434/api/tags")
-        return response.status_code == 200
-    except:
-        return False
-
+# ============= GESTIONE RISPOSTA AI =============
 def get_local_ai_response(prompt, medicine_data):
+    """Genera una risposta AI basata sui dati dei medicinali disponibili"""
     try:
+        # Verifica lo stato di Ollama
         if not check_ollama_status():
             return "Errore: Ollama non è in esecuzione. Assicurati che Ollama sia avviato sul tuo sistema."
         
-        # Analisi semantica della domanda
+        # Analisi semantica della domanda dell'utente
         query_terms = set(prompt.lower().split())
         query_type = {
             'sintomi': any(term in query_terms for term in ['sintomo', 'sintomi', 'male', 'dolore', 'disturbo']),
@@ -463,17 +461,18 @@ def get_local_ai_response(prompt, medicine_data):
             'generale': any(term in query_terms for term in ['cosa', 'come', 'quando', 'perché'])
         }
         
-        # Ricerca avanzata nei medicinali
+        # Ricerca nei dati dei medicinali
         relevant_meds = []
         partial_matches = []
         
+        # Analisi di ogni medicinale nel database
         for med in medicine_data:
             med_name = med.get('Medicine Name', '').lower()
             med_uses = med.get('Uses_IT', '').lower()
             med_effects = med.get('Side_effects_IT', '').lower()
             med_composition = med.get('Composition', '').lower()
             
-            # Calcolo diversi tipi di rilevanza
+            # Calcolo della rilevanza del medicinale per la query
             name_relevance = sum(1 for term in query_terms if term in med_name) * 2
             uses_relevance = sum(1 for term in query_terms if term in med_uses)
             effects_relevance = sum(1 for term in query_terms if term in med_effects)
@@ -481,14 +480,16 @@ def get_local_ai_response(prompt, medicine_data):
             
             total_relevance = name_relevance + uses_relevance + effects_relevance + composition_relevance
             
+            # Classificazione dei risultati
             if total_relevance > 0:
                 relevant_meds.append((total_relevance, med))
             elif any(term in (med_uses + med_effects) for term in query_terms):
                 partial_matches.append((0.5, med))
         
-        # Combina e ordina i risultati
+        # Ordinamento dei risultati per rilevanza
         all_matches = sorted(relevant_meds + partial_matches, key=lambda x: x[0], reverse=True)
         
+        # Configurazione del prompt di sistema per la risposta
         system_prompt = """Sei un assistente medico esperto che risponde in italiano.
 Fornisci informazioni accurate sui medicinali basandoti sui dati forniti.
 Se non hai informazioni specifiche dal dataset:
@@ -496,9 +497,10 @@ Se non hai informazioni specifiche dal dataset:
 2. Suggerisci alternative o approcci correlati
 3. Mantieni un tono professionale e cauto
 4. Se appropriato, suggerisci di consultare un medico"""
-        
+
+        # Generazione della risposta in base ai risultati trovati
         if not all_matches:
-            # Analizza il tipo di domanda per fornire una risposta pertinente
+            # Gestione caso: nessun medicinale trovato
             context = {
                 "tipo_richiesta": prompt,
                 "tipo_domanda": [k for k, v in query_type.items() if v],
@@ -516,7 +518,7 @@ Per favore:
 4. Suggerisci di consultare un professionista sanitario se necessario
 5. Proponi come riformulare la domanda per ottenere informazioni più specifiche"""
         else:
-            # Preparazione ottimizzata del contesto con informazioni complete
+            # Preparazione del contesto con i medicinali trovati
             essential_data = [{
                 'nome': med.get('Medicine Name', ''),
                 'utilizzi': med.get('Uses_IT', ''),
@@ -544,33 +546,39 @@ Per favore:
         st.error(f"Errore: {str(e)}")
         return f"Mi dispiace, si è verificato un errore: {str(e)}"
 
-# Inizializzazione della sessione per il chatbot
+# ============= INIZIALIZZAZIONE STATO CHATBOT =============
+# Inizializzazione della cronologia dei messaggi
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# Layout principale
-st.subheader("Lista Medicinali")
+# ============= LAYOUT PRINCIPALE =============
+st.subheader(get_text("medicine_list"))
+
+# Preparazione del DataFrame per la visualizzazione
 display_df = filtered_df[['Medicine Name', 'Composition', 'Uses_IT', 'Side_effects_IT']].copy()
-display_df.columns = ['Nome Medicinale', 'Composizione', 'Utilizzi', 'Effetti Collaterali']
+display_df.columns = [get_text("medicine_name"), get_text("composition"), get_text("uses"), get_text("side_effects")]
 if st.session_state.language == "English":
     display_df = filtered_df[['Medicine Name', 'Composition', 'Uses', 'Side_effects']].copy()
-    display_df.columns = ['Medicine Name', 'Composition', 'Uses', 'Side Effects']
+    display_df.columns = [get_text("medicine_name"), get_text("composition"), get_text("uses"), get_text("side_effects")]
 
+# Visualizzazione della tabella dei medicinali
 st.dataframe(
     display_df,
     hide_index=True,
     use_container_width=True
 )
 
-# Layout a due colonne per statistiche e chatbot
+# ============= LAYOUT STATISTICHE E CHATBOT =============
+# Creazione di due colonne per il layout
 col1, col2 = st.columns([1, 1])
 
+# Colonna delle statistiche
 with col1:
-    st.subheader("Statistiche")
+    st.subheader(get_text("statistics"))
     
-    # Grafico delle recensioni
+    # Preparazione e visualizzazione del grafico delle recensioni
     avg_reviews = pd.DataFrame({
-        'Tipo': ['Eccellenti', 'Nella Media', 'Scarse'],
+        'Tipo': [get_text("excellent"), get_text("average"), get_text("poor")],
         'Percentuale': [
             filtered_df['Excellent Review %'].mean(),
             filtered_df['Average Review %'].mean(),
@@ -578,78 +586,91 @@ with col1:
         ]
     })
     
+    # Creazione del grafico a torta
     fig_reviews = px.pie(
         avg_reviews,
         values='Percentuale',
         names='Tipo',
-        title='Distribuzione Media delle Recensioni'
+        title=get_text("reviews_distribution")
     )
     st.plotly_chart(fig_reviews, use_container_width=True)
 
+# Colonna del chatbot
 with col2:
-    st.subheader("💬 Assistente Virtuale (Mistral)")
+    st.subheader(get_text("virtual_assistant"))
     
-    # Mostra la cronologia dei messaggi
+    # Visualizzazione della cronologia dei messaggi
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # Input per il chatbot
-    if prompt := st.chat_input("Fai una domanda sui medicinali..."):
-        # Aggiungi il messaggio dell'utente alla cronologia
+    # Input per il chatbot e gestione delle risposte
+    if prompt := st.chat_input(get_text("ask_question")):
+        # Aggiunta del messaggio dell'utente alla cronologia
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # Mostra il messaggio dell'utente
+        # Visualizzazione del messaggio dell'utente
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Prepara i dati dei medicinali per il contesto
+        # Preparazione del contesto con i dati dei medicinali
         medicine_data = filtered_df.to_dict('records')
         
-        # Genera e mostra la risposta
+        # Generazione e visualizzazione della risposta
         with st.chat_message("assistant"):
             with st.spinner("Elaborazione in corso..."):
                 response = get_local_ai_response(prompt, medicine_data)
             st.markdown(response)
         
-        # Aggiungi la risposta alla cronologia
+        # Aggiunta della risposta alla cronologia
         st.session_state.messages.append({"role": "assistant", "content": response})
 
-# Dettagli medicinale
+# ============= DETTAGLI MEDICINALE =============
 st.markdown("---")
-st.subheader("Dettagli Medicinale")
+st.subheader(get_text("medicine_details"))
+
+# Selezione del medicinale
 selected_medicine = st.selectbox(
-    "Seleziona un medicinale per vedere i dettagli:",
+    get_text("select_medicine"),
     filtered_df['Medicine Name'].unique()
 )
 
+# Visualizzazione dei dettagli del medicinale selezionato
 if selected_medicine:
     medicine_details = filtered_df[filtered_df['Medicine Name'] == selected_medicine].iloc[0]
+    
+    # Layout a tre colonne per i dettagli
     col3, col4, col5 = st.columns(3)
     
+    # Prima colonna: Nome e composizione
     with col3:
-        st.metric("Nome" if st.session_state.language == "Italiano" else "Name", medicine_details['Medicine Name'])
-        st.metric("Composizione" if st.session_state.language == "Italiano" else "Composition", medicine_details['Composition'])
+        st.metric(get_text("name"), medicine_details['Medicine Name'])
+        st.metric(get_text("composition"), medicine_details['Composition'])
     
+    # Seconda colonna: Recensioni eccellenti e nella media
     with col4:
-        st.metric("Recensioni Eccellenti" if st.session_state.language == "Italiano" else "Excellent Reviews", f"{medicine_details['Excellent Review %']}%")
-        st.metric("Recensioni Nella Media" if st.session_state.language == "Italiano" else "Average Reviews", f"{medicine_details['Average Review %']}%")
+        st.metric(get_text("excellent_reviews"), f"{medicine_details['Excellent Review %']}%")
+        st.metric(get_text("average_reviews"), f"{medicine_details['Average Review %']}%")
     
+    # Terza colonna: Recensioni scarse e produttore
     with col5:
-        st.metric("Recensioni Scarse" if st.session_state.language == "Italiano" else "Poor Reviews", f"{medicine_details['Poor Review %']}%")
-        st.metric("Produttore" if st.session_state.language == "Italiano" else "Manufacturer", medicine_details['Manufacturer'])
+        st.metric(get_text("poor_reviews"), f"{medicine_details['Poor Review %']}%")
+        st.metric(get_text("manufacturer"), medicine_details['Manufacturer'])
     
-    st.markdown("### " + ("Utilizzi" if st.session_state.language == "Italiano" else "Uses"))
+    # Visualizzazione degli utilizzi
+    st.markdown("### " + get_text("uses"))
     if st.session_state.language == "Italiano":
         st.write(medicine_details['Uses_IT'])
     else:
         st.write(medicine_details['Uses'])
     
-    st.markdown("### " + ("Effetti Collaterali" if st.session_state.language == "Italiano" else "Side Effects"))
+    # Visualizzazione degli effetti collaterali
+    st.markdown("### " + get_text("side_effects"))
     if st.session_state.language == "Italiano":
         st.write(medicine_details['Side_effects_IT'])
     else:
         st.write(medicine_details['Side_effects'])
     
+    # Visualizzazione dell'immagine del medicinale se disponibile
     if pd.notna(medicine_details['Image URL']):
         st.image(medicine_details['Image URL'], caption=medicine_details['Medicine Name'])

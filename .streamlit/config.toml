@@ -1,0 +1,27 @@
+[server]
+# Disabilita il file watcher per evitare avvisi
+fileWatcherType = "none"
+
+# Configurazione per evitare problemi di CORS
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+# Configura il comportamento del browser
+gatherUsageStats = false
+
+[logger]
+# Riduce il livello di logging per evitare spam
+level = "error"
+
+[runner]
+# Configurazione per il runner
+magicEnabled = true
+
+[theme]
+# Tema scuro opzionale
+base = "dark"
+primaryColor = "#FF6B6B"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#FAFAFA" 

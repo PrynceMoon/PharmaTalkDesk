@@ -1215,3 +1215,4 @@ if selected_medicine:
         if pd.notna(medicine_details['Image URL']):
             st.image(medicine_details['Image URL'], caption=medicine_details['Medicine Name'])
         st.markdown('</div>', unsafe_allow_html=True)
+        
